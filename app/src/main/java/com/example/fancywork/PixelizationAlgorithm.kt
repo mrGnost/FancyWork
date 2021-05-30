@@ -54,7 +54,7 @@ class PixelizationAlgorithm {
                 for (j in 0 until bitmap.height step pixelSize) {
                     val pixel = pixelatedBitmap.getPixel(i, j)
                     val pixelColor = colorToTriple(pixel)
-                    val mainColor = colors.minByOrNull { x -> findDistance(x.second, pixelColor) }!!
+                    val mainColor = mainColors.minByOrNull { x -> findDistance(x.second, pixelColor) }!!
                     val mainRGB = (mainColor.second.first shl 16) +
                             (mainColor.second.second shl 8) + mainColor.second.third
                     threadCodes[i / pixelSize][j / pixelSize] = mainColor.first
