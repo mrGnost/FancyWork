@@ -60,7 +60,6 @@
             android:layout_height="315dp"
             app:srcCompat="@drawable/main_pic"
             android:id="@+id/imageView"
-            android:backgroundTint="@color/background"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"

@@ -2,14 +2,18 @@ package com.example.fancywork
 
 import android.content.res.Resources
 import android.graphics.Bitmap
+import android.graphics.Color
 import io.uuddlrlrba.closepixelate.Pixelate
 import io.uuddlrlrba.closepixelate.PixelateLayer
+import org.nield.kotlinstatistics.multiKMeansCluster
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.random.Random
 
 class PixelizationAlgorithm {
+
     companion object {
         // Method for getting thread colors from resources.
         fun getThreadColors(resources: Resources): List<Pair<String, Triple<Int, Int, Int>>> {
@@ -28,8 +32,11 @@ class PixelizationAlgorithm {
         fun getPixelsFromImage(
             bitmap: Bitmap,
             pixelSize: Int,
+            colorsCount: Int,
             colors: List<Pair<String, Triple<Int, Int, Int>>>):
                 Pair<Bitmap, Array<Array<String?>>> {
+            val mainColors =
+                kmeans(bitmap, bitmap.width, bitmap.height, colorsCount, 3.0, 100, colors)
             val pixelatedBitmap = Pixelate.fromBitmap(
                 bitmap,
                 PixelateLayer.Builder(PixelateLayer.Shape.Square)
@@ -79,6 +86,55 @@ class PixelizationAlgorithm {
                 x.third,
                 colorsAv.third
             ))).pow(2))
+        }
+
+        private fun kmeans(
+            image: Bitmap,
+            width: Int,
+            height: Int,
+            k: Int,
+            minDiff: Double,
+            maxIterations: Int,
+            colors: List<Pair<String, Triple<Int, Int, Int>>>
+        ): List<Pair<String, Triple<Int, Int, Int>>> {
+            val imageColors = (1 until width)
+                .flatMap { x -> (1 until height).map { y -> colorToTriple(image.getPixel(x, y)) } }
+            val centers = mutableListOf<Pair<Int, Triple<Int, Int, Int>>>()
+            for (i in 0 until k) {
+                centers.add(i to Triple(
+                    Random.nextInt(imageColors.minByOrNull { x -> x.first }!!.first, imageColors.maxByOrNull { x -> x.first }!!.first),
+                    Random.nextInt(imageColors.minByOrNull { x -> x.second }!!.second, imageColors.maxByOrNull { x -> x.second }!!.second),
+                    Random.nextInt(imageColors.minByOrNull { x -> x.third }!!.third, imageColors.maxByOrNull { x -> x.third }!!.third)
+                ))
+            }
+
+            var diff = 1000000.0
+            var iter = 0
+            while (diff > minDiff && iter < maxIterations) {
+                val clusters = Array(k) { mutableListOf<Triple<Int, Int, Int>>() }
+                imageColors.forEach { x -> clusters[centers.minByOrNull { y ->
+                    findDistance(x, y.second)
+                }!!.first].add(x) }
+                diff = 0.0
+                for (i in 0 until k) {
+                    val newCenterSum = clusters[i].fold(Triple(0, 0, 0), {x, y ->
+                        Triple(x.first + y.first, x.second + y.second, x.third + y.third)
+                    })
+                    val newCenter = if (clusters[i].size != 0) Triple(
+                        newCenterSum.first / clusters[i].size,
+                        newCenterSum.second / clusters[i].size,
+                        newCenterSum.third / clusters[i].size
+                    ) else Triple(
+                        Random.nextInt(imageColors.minByOrNull { x -> x.first }!!.first, imageColors.maxByOrNull { x -> x.first }!!.first),
+                        Random.nextInt(imageColors.minByOrNull { x -> x.second }!!.second, imageColors.maxByOrNull { x -> x.second }!!.second),
+                        Random.nextInt(imageColors.minByOrNull { x -> x.third }!!.third, imageColors.maxByOrNull { x -> x.third }!!.third)
+                    )
+                    diff = max(diff, findDistance(centers[i].second, newCenter))
+                    centers[i] = i to newCenter
+                }
+                iter++
+            }
+            return centers.map { x -> colors.minByOrNull { y -> findDistance(x.second, y.second) }!! }.toList()
         }
     }
 }
