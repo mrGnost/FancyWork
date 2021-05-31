@@ -92,30 +92,37 @@ class PixelizationAlgorithm {
         private fun kmeans(
             image: Bitmap,
             k: Int,
-            minDiff: Double,
+            maxDiff: Double,
             maxIterations: Int,
             colors: List<Pair<String, Triple<Int, Int, Int>>>
         ): List<Pair<String, Triple<Int, Int, Int>>> {
+            // Извлекаем все цвета пикселей из картинки.
             val imageIntColors = IntArray(image.width * image.height)
             image.getPixels(imageIntColors, 0, image.width, 0, 0, image.width, image.height)
             val imageColors = imageIntColors.map { colorToTriple(it) }
+            // Инициализируем центроиды для алгоритма.
             val centers = initCenters(imageColors, k)
+            // Заготавливаем списки точек для кластеров.
             val clusters = Array(k) { mutableListOf<Triple<Int, Int, Int>>() }
             var newCenterSum: Triple<Int, Int, Int>
             var newCenter: Triple<Int, Int, Int>
 
             var diff = 1000000.0
             var iteration = 0
-            while (diff > minDiff && iteration < maxIterations) {
+            // Обновляем центроиды, пока они не перестанут смещаться, либо пока не пройдет слишком много итераций.
+            while (diff > maxDiff && iteration < maxIterations) {
                 clusters.forEach { it.clear() }
+                // Для каждой точки выбираем ближайший центроид.
                 imageColors.forEach { x -> clusters[centers.minByOrNull { y ->
                     findDistance(x, y.second)
                 }!!.first].add(x) }
                 diff = 0.0
+                // Для каждого центроида меняем его положение на среднее из точек в его кластере.
                 for (i in 0 until k) {
                     newCenterSum = clusters[i].fold(Triple(0, 0, 0), {x, y ->
                         Triple(x.first + y.first, x.second + y.second, x.third + y.third)
                     })
+                    // Если в кластере этого центроида нет точек, рандомим ему новое поожение.
                     newCenter = if (clusters[i].size != 0) Triple(
                         newCenterSum.first / clusters[i].size,
                         newCenterSum.second / clusters[i].size,
@@ -125,6 +132,7 @@ class PixelizationAlgorithm {
                         Random.nextInt(imageColors.minByOrNull { x -> x.second }!!.second, imageColors.maxByOrNull { x -> x.second }!!.second),
                         Random.nextInt(imageColors.minByOrNull { x -> x.third }!!.third, imageColors.maxByOrNull { x -> x.third }!!.third)
                     )
+                    // Вычисляем максимальное смещение центроидов.
                     diff = max(diff, findDistance(centers[i].second, newCenter))
                     centers[i] = i to newCenter
                 }
