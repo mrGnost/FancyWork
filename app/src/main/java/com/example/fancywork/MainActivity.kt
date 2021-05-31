@@ -6,6 +6,10 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 // obviously we haven't done anything yet
 class MainActivity : AppCompatActivity() {
@@ -16,9 +20,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         // Reading thread colors dictionary from resources.
         colors = PixelizationAlgorithm.getThreadColors(resources)
+        drawImage(R.drawable.bleach)
+    }
+
+    fun drawImage(img: Int) {
         val image = findViewById<ImageView>(R.id.imageView)
         val bitmap = PixelizationAlgorithm.getPixelsFromImage(
-            BitmapFactory.decodeResource(resources, R.drawable.bleach), 10, 5, colors
+            BitmapFactory.decodeResource(resources, img), image.width / 10, image.height / 10, 5, colors
         ).first
         image.setImageBitmap(bitmap)
         image.layoutParams.width = bitmap.width
@@ -27,19 +35,11 @@ class MainActivity : AppCompatActivity() {
 
     // todo for butten download image
     public fun download(view: View) {
-        Toast.makeText(
-            view.context,
-            "вы ткнули на загрузку!",
-            Toast.LENGTH_LONG
-        ).show()
+        drawImage(R.drawable.icon)
     }
 
     // todo for button open scheme
     public fun open(view: View) {
-        Toast.makeText(
-            view.context,
-            "вы ткнули на открытие!",
-            Toast.LENGTH_LONG
-        ).show()
+        drawImage(R.drawable.bleach)
     }
 }
