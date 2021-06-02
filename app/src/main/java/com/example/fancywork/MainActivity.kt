@@ -2,6 +2,7 @@ package com.example.fancywork
 
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.ImageView
 import android.widget.Toast
@@ -20,13 +21,14 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         // Reading thread colors dictionary from resources.
         colors = PixelizationAlgorithm.getThreadColors(resources)
-        drawImage(R.drawable.bleach)
+        drawImage(R.drawable.shiba)
     }
 
     fun drawImage(img: Int) {
         val image = findViewById<ImageView>(R.id.imageView)
+        val source = BitmapFactory.decodeResource(resources, img)
         val bitmap = PixelizationAlgorithm.getPixelsFromImage(
-            BitmapFactory.decodeResource(resources, img), image.width / 10, image.height / 10, 5, colors
+            source, 10, 5, colors
         ).first
         image.setImageBitmap(bitmap)
         image.layoutParams.width = bitmap.width

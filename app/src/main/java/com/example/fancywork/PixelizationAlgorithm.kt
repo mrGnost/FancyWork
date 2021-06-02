@@ -2,18 +2,14 @@ package com.example.fancywork
 
 import android.content.res.Resources
 import android.graphics.Bitmap
-import android.graphics.Color
-import android.util.Log
 import io.uuddlrlrba.closepixelate.Pixelate
 import io.uuddlrlrba.closepixelate.PixelateLayer
-import kotlinx.coroutines.*
-import org.nield.kotlinstatistics.multiKMeansCluster
-import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.math.ceil
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.pow
+import kotlin.math.*
 import kotlin.random.Random
+
+data class MutableTriple<A, B, C>(var first: A, var second: B, var third: C)
+
+data class MutablePair<A, B>(var first: A, var second: B)
 
 class PixelizationAlgorithm {
 
@@ -34,47 +30,48 @@ class PixelizationAlgorithm {
         // This method makes a pixelated bitmap from image bitmap and provides an array of thread codes.
         fun getPixelsFromImage(
             bitmap: Bitmap,
-            newWidth: Int,
-            newHeight: Int,
+            pixelSize: Int,
             colorsCount: Int,
             colors: List<Pair<String, Triple<Int, Int, Int>>>):
                 Pair<Bitmap, Array<Array<String?>>> {
-            val mainColors =
-                kmeans(bitmap, colorsCount, 3.0, 10, colors)
-            val pixelatedBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, false)
-            val threadCodes = Array(newWidth) {
-                arrayOfNulls<String>(newHeight)
+            val mainColors = kmeans(bitmap, colorsCount, 3.0, 30, colors)
+            val pixelatedBitmap = Pixelate.fromBitmap(
+                bitmap,
+                PixelateLayer.Builder(PixelateLayer.Shape.Square)
+                    .setSize(pixelSize.toFloat())
+                    .setEnableDominantColors(true)
+                    .build()
+            )
+            val pixelatedWidth = ceil(bitmap.width.toDouble() / pixelSize).toInt()
+            val pixelatedHeight = ceil(bitmap.height.toDouble() / pixelSize).toInt()
+            val threadCodes = Array(pixelatedWidth) {
+                arrayOfNulls<String>(pixelatedHeight)
             }
-            runBlocking {
-                val listOfReturnData = ConcurrentLinkedQueue<Job>()
-                for (i in 0 until newWidth)
-                    for (j in 0 until newHeight) {
-                        listOfReturnData.add(
-                            launch {
-                                val pixel = pixelatedBitmap.getPixel(i, j)
-                                val pixelColor = colorToTriple(pixel)
-                                val mainColor = mainColors.minByOrNull { x -> findDistance(x.second, pixelColor) }!!
-                                val mainRGB = (mainColor.second.first shl 16) +
-                                        (mainColor.second.second shl 8) + mainColor.second.third
-                                threadCodes[i][j] = mainColor.first
-                                pixelatedBitmap.setPixel(i, j, mainRGB)
-                            }
-                        )
-                    }
-                listOfReturnData.joinAll()
-            }
-            return pixelatedBitmap to threadCodes
+            val bitmapColors = IntArray(pixelatedWidth * pixelatedHeight)
+            for (i in 0 until bitmap.width step pixelSize)
+                for (j in 0 until bitmap.height step pixelSize) {
+                    val pixel = pixelatedBitmap.getPixel(i, j)
+                    val pixelColor = colorToTriple(pixel)
+                    val mainColor = mainColors.minByOrNull { x -> findDistance(x.second, pixelColor) }!!
+                    val mainRGB = (mainColor.second.first shl 16) +
+                            (mainColor.second.second shl 8) + mainColor.second.third
+                    threadCodes[i / pixelSize][j / pixelSize] = mainColor.first
+                    bitmapColors[j / pixelSize * pixelatedWidth + i / pixelSize] = mainRGB
+                }
+            val resultBitmap =
+                Bitmap.createBitmap(bitmapColors, pixelatedWidth, pixelatedHeight, Bitmap.Config.RGB_565)
+            return resultBitmap to threadCodes
         }
 
-        private fun colorToTriple(color: Int): Triple<Int, Int, Int> {
-            return Triple(
+        private fun colorToTriple(color: Int): MutableTriple<Int, Int, Int> {
+            return MutableTriple(
                 (color shr 16) and 0xff,
                 (color shr 8) and 0xff,
                 color and 0xff
             )
         }
 
-        private fun findDistance(x: Triple<Int, Int, Int>, colorsAv: Triple<Int, Int, Int>): Double {
+        private fun findDistance(x: Triple<Int, Int, Int>, colorsAv: MutableTriple<Int, Int, Int>): Double {
             return (((1 + max(x.first, colorsAv.first)).toDouble() / (1 + min(
                 x.first,
                 colorsAv.first
@@ -99,59 +96,104 @@ class PixelizationAlgorithm {
             // Извлекаем все цвета пикселей из картинки.
             val imageIntColors = IntArray(image.width * image.height)
             image.getPixels(imageIntColors, 0, image.width, 0, 0, image.width, image.height)
-            val imageColors = imageIntColors.map { colorToTriple(it) }
+            val imageColors = mutableMapOf<MutableTriple<Int, Int, Int>, Int>()
+            for (color in imageIntColors) {
+                val colorTriple = colorToTriple(color)
+                if (!imageColors.containsKey(colorTriple))
+                    imageColors.put(colorToTriple(color), 1)
+                else
+                    imageColors[colorTriple] = imageColors[colorTriple]!! + 1
+            }
             // Инициализируем центроиды для алгоритма.
             val centers = initCenters(imageColors, k)
             // Заготавливаем списки точек для кластеров.
-            val clusters = Array(k) { mutableListOf<Triple<Int, Int, Int>>() }
-            var newCenterSum: Triple<Int, Int, Int>
-            var newCenter: Triple<Int, Int, Int>
+            val clusters = Array(k) { MutablePair(MutableTriple(0, 0, 0), 0) }
+            val newCenter = MutableTriple(0, 0, 0)
 
             var diff = 1000000.0
             var iteration = 0
             // Обновляем центроиды, пока они не перестанут смещаться, либо пока не пройдет слишком много итераций.
             while (diff > maxDiff && iteration < maxIterations) {
-                clusters.forEach { it.clear() }
+                for (cluster in clusters) {
+                    cluster.first.first = 0
+                    cluster.first.second = 0
+                    cluster.first.third = 0
+                    cluster.second = 0
+                }
                 // Для каждой точки выбираем ближайший центроид.
-                imageColors.forEach { x -> clusters[centers.minByOrNull { y ->
-                    findDistance(x, y.second)
-                }!!.first].add(x) }
+                imageColors.forEach { x ->
+                    val index = centers.minByOrNull { y ->
+                        euclidDistance(x.key, y.second)
+                    }!!.first
+                    clusters[index].first.first += x.key.first * x.value
+                    clusters[index].first.second += x.key.second * x.value
+                    clusters[index].first.third += x.key.third * x.value
+                    clusters[index].second += x.value
+                }
                 diff = 0.0
                 // Для каждого центроида меняем его положение на среднее из точек в его кластере.
                 for (i in 0 until k) {
-                    newCenterSum = clusters[i].fold(Triple(0, 0, 0), {x, y ->
-                        Triple(x.first + y.first, x.second + y.second, x.third + y.third)
-                    })
                     // Если в кластере этого центроида нет точек, рандомим ему новое поожение.
-                    newCenter = if (clusters[i].size != 0) Triple(
-                        newCenterSum.first / clusters[i].size,
-                        newCenterSum.second / clusters[i].size,
-                        newCenterSum.third / clusters[i].size
-                    ) else Triple(
-                        Random.nextInt(imageColors.minByOrNull { x -> x.first }!!.first, imageColors.maxByOrNull { x -> x.first }!!.first),
-                        Random.nextInt(imageColors.minByOrNull { x -> x.second }!!.second, imageColors.maxByOrNull { x -> x.second }!!.second),
-                        Random.nextInt(imageColors.minByOrNull { x -> x.third }!!.third, imageColors.maxByOrNull { x -> x.third }!!.third)
-                    )
+                    if (clusters[i].second != 0) {
+                        newCenter.first = clusters[i].first.first / clusters[i].second
+                        newCenter.second = clusters[i].first.second / clusters[i].second
+                        newCenter.third = clusters[i].first.third / clusters[i].second
+                    } else {
+                        newCenter.first =
+                            Random.nextInt(
+                                imageColors.minByOrNull { x -> x.key.first }!!.key.first,
+                                imageColors.maxByOrNull { x -> x.key.first }!!.key.first
+                            )
+                        newCenter.second =
+                            Random.nextInt(
+                                imageColors.minByOrNull { x -> x.key.second }!!.key.second,
+                                imageColors.maxByOrNull { x -> x.key.second }!!.key.second
+                            )
+                        newCenter.third =
+                            Random.nextInt(
+                                imageColors.minByOrNull { x -> x.key.third }!!.key.third,
+                                imageColors.maxByOrNull { x -> x.key.third }!!.key.third
+                            )
+                    }
                     // Вычисляем максимальное смещение центроидов.
-                    diff = max(diff, findDistance(centers[i].second, newCenter))
-                    centers[i] = i to newCenter
+                    diff = max(diff, euclidDistance(centers[i].second, newCenter))
+                    centers[i].first = i
+                    centers[i].second.first = newCenter.first
+                    centers[i].second.second = newCenter.second
+                    centers[i].second.third = newCenter.third
                 }
                 iteration++
             }
-            return centers.map { x -> colors.minByOrNull { y -> findDistance(x.second, y.second) }!! }.toList()
+            return centers.map { x -> colors.minByOrNull { y -> findDistance(y.second, x.second) }!! }.toList()
         }
 
-        private fun initCenters(colors: List<Triple<Int, Int, Int>>, k: Int):
-                MutableList<Pair<Int, Triple<Int, Int, Int>>> {
-            val centers = mutableListOf<Pair<Int, Triple<Int, Int, Int>>>()
+        private fun initCenters(colors: MutableMap<MutableTriple<Int, Int, Int>, Int>, k: Int):
+                MutableList<MutablePair<Int, MutableTriple<Int, Int, Int>>> {
+            val centers = mutableListOf<MutablePair<Int, MutableTriple<Int, Int, Int>>>()
             for (i in 0 until k) {
-                centers.add(i to Triple(
-                    Random.nextInt(colors.minByOrNull { x -> x.first }!!.first, colors.maxByOrNull { x -> x.first }!!.first),
-                    Random.nextInt(colors.minByOrNull { x -> x.second }!!.second, colors.maxByOrNull { x -> x.second }!!.second),
-                    Random.nextInt(colors.minByOrNull { x -> x.third }!!.third, colors.maxByOrNull { x -> x.third }!!.third)
-                ))
+                centers.add(MutablePair(i, MutableTriple(
+                    Random.nextInt(
+                        colors.minByOrNull { x -> x.key.first }!!.key.first,
+                        colors.maxByOrNull { x -> x.key.first }!!.key.first
+                    ),
+                    Random.nextInt(
+                        colors.minByOrNull { x -> x.key.second }!!.key.second,
+                        colors.maxByOrNull { x -> x.key.second }!!.key.second
+                    ),
+                    Random.nextInt(
+                        colors.minByOrNull { x -> x.key.third }!!.key.third,
+                        colors.maxByOrNull { x -> x.key.third }!!.key.third
+                    )
+                )))
             }
             return centers
         }
+
+        private fun euclidDistance(x: MutableTriple<Int, Int, Int>, y: MutableTriple<Int, Int, Int>): Double =
+            sqrt((
+                (x.first - y.first) * (x.first - y.first) +
+                (x.first - y.first) * (x.first - y.first) +
+                (x.first - y.first) * (x.first - y.first)
+                    ).toDouble())
     }
 }
